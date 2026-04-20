@@ -106,7 +106,7 @@ YOUR APPLICATION
 │                                                                  │
 │  id | alias | status | fail_count | cooldown_until | avg_latency │
 │   1 | key-1 | active |          0 |           null |       102.3 │
-│   2 | key-2 | r_ltd  |          0 |    2024-01-01T… |        88.1 │
+│   2 | key-2 | r_ltd  |          0 |    2024-01-01T… |       88.1 │
 │   3 | key-3 | active |          2 |           null |       455.0 │
 └──────────────────────────────────────────────────────────────────┘
           +
