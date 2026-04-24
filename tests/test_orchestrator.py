@@ -26,7 +26,7 @@ from app.core.exceptions import (
     NoAvailableKeyError,
     RateLimitError,
 )
-from app.models.api_key import APIKey, KeyStatus
+from app.model.api_key import APIKey, KeyStatus
 from app.schemas.request import AIRequest, Message
 from app.services.orchestrator import Orchestrator
 from tests.conftest import make_mock_grok_response

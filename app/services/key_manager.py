@@ -54,7 +54,7 @@ from app.core.config import settings
 from app.core.exceptions import KeyValidationError, NoAvailableKeyError
 from app.core.logging_config import get_logger
 from app.db.base import utcnow
-from app.models.api_key import APIKey, KeyStatus
+from app.model.api_key import APIKey, KeyStatus
 from app.schemas.api_key import APIKeyCreate, APIKeyUpdate
 
 log = get_logger(__name__)

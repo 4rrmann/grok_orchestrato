@@ -426,7 +426,7 @@ and a 100ms query.
 **What it does:** Imports `APIKey` and `KeyStatus` from `api_key.py`.
 
 **Why this matters:** Alembic (the migration tool) discovers models by importing
-`app.models` and looking at `Base.metadata`. If models aren't imported somewhere
+`app.model` and looking at `Base.metadata`. If models aren't imported somewhere
 that Alembic can see them, it won't know about them and won't generate migration
 scripts for them. The `__init__.py` import ensures the model is always
 "registered" with the Base whenever the models package is imported.
@@ -1447,7 +1447,7 @@ alembic init alembic
 
 # Edit alembic/env.py — add these two lines near the top:
 from app.db.base import Base
-from app.models import api_key  # ensures model is registered
+from app.model import api_key  # ensures model is registered
 target_metadata = Base.metadata
 
 # Generate a migration from your current models:

@@ -45,7 +45,7 @@ from app.core.exceptions import (
     RateLimitError,
 )
 from app.core.logging_config import get_logger
-from app.models.api_key import APIKey
+from app.model.api_key import APIKey
 from app.schemas.request import AIRequest, AIResponse, UsageStats
 from app.services.grok_client import GrokClient, GrokResponse, grok_client
 from app.services.key_manager import KeyManager

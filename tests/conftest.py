@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 
 from app.db.base import Base
 from app.main import create_app
-from app.models.api_key import APIKey, KeyStatus
+from app.model.api_key import APIKey, KeyStatus
 from app.services.grok_client import GrokClient, GrokResponse
 
 

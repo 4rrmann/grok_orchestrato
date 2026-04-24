@@ -18,7 +18,7 @@ import pytest
 import pytest_asyncio
 
 from app.core.exceptions import KeyValidationError, NoAvailableKeyError
-from app.models.api_key import APIKey, KeyStatus
+from app.model.api_key import APIKey, KeyStatus
 from app.schemas.api_key import APIKeyCreate, APIKeyUpdate
 from app.services.key_manager import KeyManager
 
