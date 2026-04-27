@@ -1,4 +1,4 @@
-# Grok API Orchestrator — Complete Master Guide
+# Groq API Orchestrator — Complete Master Guide
 
 > **Everything you need**: every file explained, every terminal command written out,
 > the full data flow from HTTP request to Grok and back, how to store your API keys,
