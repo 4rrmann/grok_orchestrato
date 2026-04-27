@@ -40,7 +40,12 @@ def _build_engine() -> AsyncEngine:
     connect_args = {"check_same_thread": False} if is_sqlite else {}
 
     kwargs: dict = {
-        "echo": settings.DEBUG,          # log every SQL statement in debug mode
+        # echo=True logs every SQL statement.
+        # hide_parameters=True prevents SQLAlchemy from logging the actual
+        # bound parameter values — so your API keys never appear in the
+        # terminal output even in DEBUG mode. Always keep this True.
+        "echo": settings.DEBUG,
+        "hide_parameters": True,
         "connect_args": connect_args,
     }
 
