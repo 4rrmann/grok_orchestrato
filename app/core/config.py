@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./grok_orchestrator.db"
 
     # ── Grok API ─────────────────────────────────────────────────────────────
-    GROK_BASE_URL: AnyHttpUrl = "https://api.x.ai/v1"
-    GROK_DEFAULT_MODEL: str = "grok-3"
+    GROK_BASE_URL: str = "https://api.groq.com/openai/v1"
+    GROK_DEFAULT_MODEL: str = "llama-3.3-70b-versatile"
     GROK_REQUEST_TIMEOUT: float = 30.0    # seconds before we treat it as timeout
 
     # ── Orchestration ────────────────────────────────────────────────────────
