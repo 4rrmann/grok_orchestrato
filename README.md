@@ -1,4 +1,4 @@
-# Grok API Orchestrator
+# Groq API Orchestrator
 
 A production-grade FastAPI backend that acts as an intelligent orchestration layer
 for managing multiple Grok API keys. Provides smart load balancing, automatic
