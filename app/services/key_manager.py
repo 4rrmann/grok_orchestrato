@@ -171,57 +171,93 @@ class KeyManager:
 
     def _score_keys(self, keys: list[APIKey]) -> list[tuple[APIKey, float]]:
         """
-        Score each key. Lower score = better candidate.
+        Score each key across four normalised dimensions. Lower score = better.
 
-        We first extract the raw values for each dimension, find the
-        min/max across the candidate pool, then normalise each to [0, 1].
-        This ensures no single dimension dominates due to scale differences.
+        Dimensions
+        ──────────
+        1. fail_count   — reliability.  Keys with recent failures score higher (worse).
+        2. avg_latency  — speed.        Slower keys score higher (worse).
+        3. recency      — time fairness. Most-recently-used keys score higher (worse).
+        4. load         — request fairness. Keys that have served more total requests
+                          score higher (worse). This is the critical fix for monopoly:
+                          without it, the fastest/highest-priority key wins every time
+                          regardless of how many requests it has already handled.
+
+        Priority is a *bonus* (subtracts from score) scaled by PRIORITY_BONUS_SCALE.
+        The old scale of 0.5 let a 4-point priority gap (79 vs 75) produce 7× the
+        traffic to one key. Reduced to 0.15 so priority is a tiebreaker, not a hammer.
+
+        All dimensions are normalised to [0, 1] relative to the current candidate pool
+        so that latency (range: 0–5000ms) and fail_count (range: 0–5) don't clash.
         """
         if len(keys) == 1:
             return [(keys[0], 0.0)]
 
-        now = utcnow()  # always timezone-aware
+        now = utcnow()
+        cfg = settings
 
-        # Raw values for each key
-        fail_counts = [k.fail_count for k in keys]
-        latencies = [k.avg_latency_ms for k in keys]
-        # last_used: None means never used — most desirable (no recency penalty).
-        # _as_utc() normalises SQLite's naive datetimes so subtraction works.
-        recency = [
+        # ── Raw values ────────────────────────────────────────────────────────
+        fail_counts  = [k.fail_count for k in keys]
+        latencies    = [k.avg_latency_ms for k in keys]
+        total_reqs   = [k.total_requests for k in keys]
+
+        # Recency: seconds since last use. None (never used) → inf (most desirable).
+        # _as_utc() handles SQLite returning timezone-naive datetimes.
+        recency_secs = [
             (now - self._as_utc(k.last_used)).total_seconds() if k.last_used else float("inf")
             for k in keys
         ]
 
+        # ── Normalise helper ─────────────────────────────────────────────────
         def normalise(values: list[float]) -> list[float]:
-            """Normalise a list to [0, 1]. If all equal, return zeros."""
-            min_v, max_v = min(values), max(values)
+            """Map values to [0, 1]. If all equal, everyone gets 0 (no penalty)."""
+            min_v = min(values)
+            max_v = max(values)
             if max_v == min_v:
                 return [0.0] * len(values)
             return [(v - min_v) / (max_v - min_v) for v in values]
 
         norm_fail = normalise(fail_counts)
-        norm_lat = normalise(latencies)
-        # For recency, longer time since last use = lower score (more fair to use it)
-        # So we invert: high recency_seconds → low penalty.
-        max_recency = max(r for r in recency if r != float("inf")) if any(r != float("inf") for r in recency) else 1
+        norm_lat  = normalise(latencies)
+        norm_load = normalise(total_reqs)
+
+        # Recency: longer time since last use = LOWER penalty (we want to use it).
+        # Invert: most-recently-used → norm close to 1.0 (highest penalty).
+        # Keys never used get 0.0 penalty (always preferred on this dimension).
+        finite_recency = [r for r in recency_secs if r != float("inf")]
+        max_recency = max(finite_recency) if finite_recency else 1.0
         norm_recency = [
             0.0 if r == float("inf") else 1.0 - (r / max_recency)
-            for r in recency
+            for r in recency_secs
         ]
 
-        cfg = settings
+        # ── Score each key ────────────────────────────────────────────────────
         scored = []
         for i, key in enumerate(keys):
-            # Priority is an inverse bonus — higher priority = lower score
-            priority_bonus = (key.priority / 100.0) * 0.5
+            # Priority subtracts from score (higher priority = lower score = preferred).
+            # Scale 0.15 makes priority a gentle nudge, not a traffic monopoly.
+            priority_bonus = (key.priority / 100.0) * cfg.PRIORITY_BONUS_SCALE
 
             score = (
                 cfg.SCORE_WEIGHT_FAIL_COUNT * norm_fail[i]
-                + cfg.SCORE_WEIGHT_LATENCY * norm_lat[i]
+                + cfg.SCORE_WEIGHT_LATENCY   * norm_lat[i]
                 + cfg.SCORE_WEIGHT_LAST_USED * norm_recency[i]
+                + cfg.SCORE_WEIGHT_LOAD      * norm_load[i]
                 - priority_bonus
             )
             scored.append((key, score))
+
+            log.debug(
+                "key_scored",
+                key_id=key.id,
+                alias=key.alias,
+                score=round(score, 4),
+                norm_fail=round(norm_fail[i], 3),
+                norm_lat=round(norm_lat[i], 3),
+                norm_recency=round(norm_recency[i], 3),
+                norm_load=round(norm_load[i], 3),
+                priority_bonus=round(priority_bonus, 3),
+            )
 
         return scored
 

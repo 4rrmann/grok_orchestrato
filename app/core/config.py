@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./grok_orchestrator.db"
 
     # ── Grok API ─────────────────────────────────────────────────────────────
-    GROK_BASE_URL: str = "https://api.groq.com/openai/v1"
-    GROK_DEFAULT_MODEL: str = "llama-3.3-70b-versatile"
+    GROK_BASE_URL: AnyHttpUrl = "https://api.x.ai/v1"
+    GROK_DEFAULT_MODEL: str = "grok-3"
     GROK_REQUEST_TIMEOUT: float = 30.0    # seconds before we treat it as timeout
 
     # ── Orchestration ────────────────────────────────────────────────────────
@@ -43,11 +43,26 @@ class Settings(BaseSettings):
                                           # 0.2 = "remember the past heavily"
 
     # ── Key Selection Scoring ────────────────────────────────────────────────
-    # Weights that determine how we score each key when choosing one.
-    # Adjust these to tune the load-balancing behaviour.
-    SCORE_WEIGHT_FAIL_COUNT: float = 0.4
-    SCORE_WEIGHT_LATENCY: float = 0.4
-    SCORE_WEIGHT_LAST_USED: float = 0.2   # recency penalty to ensure fairness
+    # Four dimensions, each normalised to [0,1], combined as a weighted sum.
+    # Lower final score = better key. Weights must conceptually add to ~1.0.
+    #
+    # SCORE_WEIGHT_FAIL_COUNT  — reliability: keys with recent failures score higher (worse)
+    # SCORE_WEIGHT_LATENCY     — speed: slower keys score higher (worse)
+    # SCORE_WEIGHT_LAST_USED   — recency: most-recently-used keys score higher (worse)
+    # SCORE_WEIGHT_LOAD        — fairness: keys that have served more total requests
+    #                            score higher (worse). This is the fix for "one key
+    #                            monopolising all traffic". Without this dimension,
+    #                            the fastest key with the highest priority wins every
+    #                            single time regardless of how overloaded it is.
+    #
+    # PRIORITY_BONUS_SCALE     — how much priority (0–100) reduces a key's score.
+    #                            0.5 was too strong (4 priority points → 7× traffic).
+    #                            0.15 makes priority a tie-breaker, not a bulldozer.
+    SCORE_WEIGHT_FAIL_COUNT: float = 0.35
+    SCORE_WEIGHT_LATENCY: float = 0.30
+    SCORE_WEIGHT_LAST_USED: float = 0.20
+    SCORE_WEIGHT_LOAD: float = 0.15        # new: load distribution fairness
+    PRIORITY_BONUS_SCALE: float = 0.15     # was 0.5 — reduced to a gentle nudge
 
     # ── Security ─────────────────────────────────────────────────────────────
     API_SECRET_KEY: str = "change-me-in-production"

@@ -1,7 +1,7 @@
 # Groq API Orchestrator — Complete Master Guide
 
 > **Everything you need**: every file explained, every terminal command written out,
-> the full data flow from HTTP request to Grok and back, how to store your API keys,
+> the full data flow from HTTP request to Groq and back, how to store your API keys,
 > how to run tests, and how to scale to production. Read this top-to-bottom once and
 > you will understand the entire system.
 
@@ -17,14 +17,14 @@
    - Database: `db/` — engine, session, base model
    - Data Model: `models/` — the api_keys table
    - API Contracts: `schemas/` — what goes in and comes out
-   - Business Logic: `services/` — grok_client, key_manager, orchestrator
+   - Business Logic: `services/` — Groq_client, key_manager, orchestrator
    - HTTP Layer: `api/routes/` — thin route handlers
    - Observability: `metrics/` — latency tracking
    - Entry Point: `main.py` — wiring everything together
    - Tests: `tests/` — how every piece is verified
 5. [Full Request Lifecycle — Step by Step](#5-full-request-lifecycle)
 6. [Terminal Walkthrough — From Zero to Running](#6-terminal-walkthrough)
-7. [How to Store and Manage Your Grok API Keys](#7-how-to-store-and-manage-your-grok-api-keys)
+7. [How to Store and Manage Your Groq API Keys](#7-how-to-store-and-manage-your-Groq-api-keys)
 8. [All Admin Operations (with curl)](#8-all-admin-operations)
 9. [Understanding the Scoring Algorithm](#9-understanding-the-scoring-algorithm)
 10. [Failure Scenarios — What Happens When Things Break](#10-failure-scenarios)
@@ -36,11 +36,11 @@
 
 ## 1. What This System Actually Does (Plain English)
 
-Imagine you have five Grok API keys. Without this system, your code picks one key
+Imagine you have five Groq API keys. Without this system, your code picks one key
 and hammers it until it hits a rate limit, then crashes. With this system, you have
-a smart traffic controller sitting between your application and Grok's servers.
+a smart traffic controller sitting between your application and Groq's servers.
 
-Every time your application wants to ask Grok something, the request goes to our
+Every time your application wants to ask Groq something, the request goes to our
 orchestrator first. The orchestrator looks at all your keys, scores each one based
 on how healthy it is (how many recent failures, how fast it responds, when it was
 last used), picks the best one, and sends the request. If that key gets rate-limited,
@@ -89,11 +89,11 @@ YOUR APPLICATION
           │ asks "who is best?"        │ sends actual request
           ▼                            ▼
 ┌─────────────────────┐    ┌───────────────────────────────────────┐
-│  KEY MANAGER        │    │  GROK CLIENT                          │
-│  (key_manager.py)   │    │  (grok_client.py)                     │
+│  KEY MANAGER        │    │  Groq CLIENT                          │
+│  (key_manager.py)   │    │  (Groq_client.py)                     │
 │                     │    │                                       │
 │  • Scores all keys  │    │  • Pure HTTP communication layer      │
-│  • Filters cooldowns│    │  • Builds the JSON payload for Grok   │
+│  • Filters cooldowns│    │  • Builds the JSON payload for Groq   │
 │  • Updates state    │    │  • Maps HTTP 429/401/5xx to typed     │
 │  • Runs all DB ops  │    │    exceptions                         │
 │    for api_keys     │    │  • Connection pooling via httpx       │
@@ -121,7 +121,7 @@ YOUR APPLICATION
 ## 3. Complete Project File Tree
 
 ```
-grok_orchestrator/                  ← project root
+Groq_orchestrator/                  ← project root
 │
 ├── .env.example                    ← template for your secrets (safe to commit)
 ├── requirements.txt                ← all Python dependencies with pinned versions
@@ -154,7 +154,7 @@ grok_orchestrator/                  ← project root
 │   │
 │   ├── services/                   ← all business logic lives here
 │   │   ├── __init__.py
-│   │   ├── grok_client.py          ← HTTP wrapper for Grok API (no decisions)
+│   │   ├── Groq_client.py          ← HTTP wrapper for Groq API (no decisions)
 │   │   ├── key_manager.py          ← key scoring, state machine, DB operations
 │   │   └── orchestrator.py         ← retry loop + failure classification
 │   │
@@ -171,7 +171,7 @@ grok_orchestrator/                  ← project root
 │
 └── tests/                          ← test suite (mirrors app structure)
     ├── __init__.py
-    ├── conftest.py                 ← shared fixtures (fake DB, mock Grok client)
+    ├── conftest.py                 ← shared fixtures (fake DB, mock Groq client)
     ├── test_key_manager.py         ← unit tests for scoring + state transitions
     ├── test_orchestrator.py        ← unit tests for retry + failure routing
     └── test_routes.py              ← integration tests for HTTP routes
@@ -189,7 +189,7 @@ the outermost shell (config) inward to the database, then back out to the HTTP l
 ### FOUNDATION LAYER — `app/core/`
 
 These three files are the shared utilities that every other part of the system
-depends on. They don't talk to Grok, they don't query the database — they just
+depends on. They don't talk to Groq, they don't query the database — they just
 provide reliable infrastructure: "what are our settings?", "what type of error
 is this?", "how do we write a log line?"
 
@@ -212,7 +212,7 @@ of the system picks it up.
 
 **How it fits into the flow:** `config.py` is imported by almost every other
 module. The `KeyManager` reads `COOLDOWN_SECONDS` and `FAILURE_THRESHOLD`. The
-`Orchestrator` reads `MAX_RETRIES`. The `GrokClient` reads `GROK_REQUEST_TIMEOUT`.
+`Orchestrator` reads `MAX_RETRIES`. The `GroqClient` reads `Groq_REQUEST_TIMEOUT`.
 They all go through `settings = get_settings()` — one shared, cached object.
 
 ```python
@@ -232,7 +232,7 @@ mode in the system has its own exception class. This is the "vocabulary of failu
 that lets different layers of the system communicate precisely about what went wrong.
 
 **Why it matters:** This is perhaps the most architecturally important file in
-the project. Consider the alternative: if `GrokClient` just raises a plain `Exception`
+the project. Consider the alternative: if `GroqClient` just raises a plain `Exception`
 with the text "Request failed", the `Orchestrator` would have to parse strings to
 figure out whether to cooldown the key or disable it permanently. Typed exceptions
 make failure handling deterministic and easy to test.
@@ -243,15 +243,15 @@ The hierarchy is designed so you can catch at any level of specificity:
 OrchestratorError              ← catch this to handle ANY application error
 ├── NoAvailableKeyError        ← catch this for "pool is empty" situations
 ├── AllRetriesExhaustedError   ← catch this for "tried everything, gave up"
-└── GrokAPIError               ← catch this for ANY Grok API error
+└── GroqAPIError               ← catch this for ANY Groq API error
     ├── RateLimitError         ← 429 → cooldown and retry
     ├── AuthenticationError    ← 401/403 → disable immediately
-    ├── GrokTimeoutError       ← timeout → increment fail_count and retry
-    ├── GrokServerError        ← 5xx → increment fail_count and retry
-    └── GrokClientError        ← other 4xx → do NOT retry (our fault)
+    ├── GroqTimeoutError       ← timeout → increment fail_count and retry
+    ├── GroqServerError        ← 5xx → increment fail_count and retry
+    └── GroqClientError        ← other 4xx → do NOT retry (our fault)
 ```
 
-**How it fits into the flow:** `GrokClient` raises these exceptions after
+**How it fits into the flow:** `GroqClient` raises these exceptions after
 receiving an HTTP response. The `Orchestrator` catches them with specific
 `except` blocks and calls the right `KeyManager` method for each type.
 The FastAPI routes catch the highest-level ones (`NoAvailableKeyError`,
@@ -276,7 +276,7 @@ allow you to write queries like "show me all failures for key_id=3 in the last h
 **The `bind_request_context` pattern:** When a request arrives, the middleware in
 `main.py` calls `bind_request_context(request_id="abc-123")`. From that point
 forward, every single log call anywhere in the stack — in the Orchestrator, in
-the KeyManager, in the GrokClient — automatically includes `"request_id": "abc-123"`
+the KeyManager, in the GroqClient — automatically includes `"request_id": "abc-123"`
 without any code needing to pass it around manually. This is what lets you trace
 a single user request through the entire system.
 
@@ -293,7 +293,7 @@ log.info("key_selected", key_id=3, latency_ms=102.4)
 ### DATABASE LAYER — `app/db/`
 
 These files handle how Python objects get stored in and retrieved from the
-database. This layer has no knowledge of Grok, keys, or scoring — it just
+database. This layer has no knowledge of Groq, keys, or scoring — it just
 provides reliable database access.
 
 ---
@@ -469,8 +469,8 @@ and Pydantic does all the work.
 user/assistant/system message) and `UsageStats` (token counts).
 
 **The `AIResponse` enrichment:** Notice that `AIResponse` includes fields that
-don't come from Grok directly — `key_alias`, `attempts`, and `latency_ms`. These
-are added by the Orchestrator after the Grok call completes. This "response
+don't come from Groq directly — `key_alias`, `attempts`, and `latency_ms`. These
+are added by the Orchestrator after the Groq call completes. This "response
 enrichment" pattern is extremely valuable in production because it lets the calling
 application understand exactly how its request was served: "It took 2 attempts and
 280ms, using key prod-key-2." This data is gold for debugging latency spikes or
@@ -487,23 +487,23 @@ task, or an HTTP handler with equal ease.
 
 ---
 
-#### `app/services/grok_client.py`
+#### `app/services/Groq_client.py`
 
-**What it does:** Makes HTTP calls to Grok's API. That is its only job. It
+**What it does:** Makes HTTP calls to Groq's API. That is its only job. It
 contains zero decision-making logic — it does not decide which key to use, it
 does not retry, it does not update any state. It receives a key and a request,
-sends the HTTP call, and either returns a `GrokResponse` or raises a typed
+sends the HTTP call, and either returns a `GroqResponse` or raises a typed
 exception.
 
 **The `httpx.AsyncClient` singleton:** The client is created once at module import
 time and reused across all requests:
 
 ```python
-grok_client = GrokClient()  # module-level singleton
+Groq_client = GroqClient()  # module-level singleton
 ```
 
 This matters because each `httpx.AsyncClient` maintains an internal connection
-pool — a set of pre-established TCP+TLS connections to Grok's servers. Reusing
+pool — a set of pre-established TCP+TLS connections to Groq's servers. Reusing
 the client means we reuse these connections (HTTP keep-alive). Creating a new
 client per request would mean a new TCP handshake and TLS negotiation for every
 single API call, adding 50–200ms of overhead each time.
@@ -626,7 +626,7 @@ locks or `SELECT FOR UPDATE`.
 #### `app/services/orchestrator.py`
 
 **What it does:** Implements the retry loop and failure classification logic.
-It calls `KeyManager` to get a key, calls `GrokClient` to use it, and based
+It calls `KeyManager` to get a key, calls `GroqClient` to use it, and based
 on what happens, either returns a response or tries again with a different key.
 
 **The `tried_key_ids` set:** This is the mechanism that ensures we never try
@@ -648,29 +648,29 @@ Key 1's status, so it won't be returned as "best available" anyway — but
 `tried_key_ids` is a safety net for cases where status changes haven't propagated
 yet.
 
-**Why `GrokClientError` is not retried:**
+**Why `GroqClientError` is not retried:**
 
 ```python
-except GrokClientError as exc:
+except GroqClientError as exc:
     # Bad request — our payload is wrong.
     # A different key would receive the same payload and also fail.
     # Do NOT retry. Surface to the caller immediately.
     raise
 ```
 
-If you send a malformed JSON body to Grok, you'll get a 400 Bad Request. Sending
+If you send a malformed JSON body to Groq, you'll get a 400 Bad Request. Sending
 the same malformed body to three different keys will give you three 400 responses.
 Retrying in this case wastes time and API quota. This is a fundamental distinction:
 transient errors (timeout, rate limit, server error) are worth retrying because
 the *same* request *might* succeed next time. Client errors are not worth retrying
 because the *same* request will *definitely* fail again.
 
-**The `_build_response` static method:** After a successful Grok call, the
+**The `_build_response` static method:** After a successful Groq call, the
 Orchestrator enriches the response with metadata the caller never had to ask for:
 
 ```python
 return AIResponse(
-    content=grok.content,
+    content=Groq.content,
     key_alias=key.alias,    # which key served this (alias, not the real key!)
     attempts=attempt,       # how many tries were needed
     latency_ms=total_latency,  # wall-clock time including all retries
@@ -701,7 +701,7 @@ exception into an appropriate HTTP response.
 ```
 NoAvailableKeyError      →  503 Service Unavailable
 AllRetriesExhaustedError →  502 Bad Gateway
-GrokClientError          →  400 Bad Request
+GroqClientError          →  400 Bad Request
 Any unexpected Exception →  500 Internal Server Error
 ```
 
@@ -794,7 +794,7 @@ async def lifespan(app):
     yield  # ← the server is running HERE, handling requests
     
     # SHUTDOWN — runs once when the server is stopping
-    await grok_client.close()  # drain the HTTP connection pool gracefully
+    await Groq_client.close()  # drain the HTTP connection pool gracefully
 ```
 
 This replaces the older `@app.on_event("startup")` and `@app.on_event("shutdown")`
@@ -836,24 +836,24 @@ disappears after. This makes tests hermetically isolated.
 `db_session` — Wraps the engine in a session and calls `rollback()` after each
 test. Even if a test commits data, the rollback ensures the next test starts clean.
 
-`mock_grok_success` / `mock_grok_rate_limit` / `mock_grok_timeout` — These are
-mock `GrokClient` objects with pre-programmed behaviors. They use Python's
+`mock_Groq_success` / `mock_Groq_rate_limit` / `mock_Groq_timeout` — These are
+mock `GroqClient` objects with pre-programmed behaviors. They use Python's
 `unittest.mock.AsyncMock` to fake the `complete()` coroutine. This means tests
-never make real network calls to Grok — they're fast, free, and deterministic.
+never make real network calls to Groq — they're fast, free, and deterministic.
 
 ```python
 # conftest.py creates this fixture:
 @pytest.fixture
-def mock_grok_success():
-    client = MagicMock(spec=GrokClient)
-    client.complete = AsyncMock(return_value=make_mock_grok_response())
+def mock_Groq_success():
+    client = MagicMock(spec=GroqClient)
+    client.complete = AsyncMock(return_value=make_mock_Groq_response())
     return client
 
 # A test uses it like this:
-async def test_happy_path(db_session, mock_grok_success):
-    orchestrator = Orchestrator(db=db_session, client=mock_grok_success)
+async def test_happy_path(db_session, mock_Groq_success):
+    orchestrator = Orchestrator(db=db_session, client=mock_Groq_success)
     response = await orchestrator.handle_request(...)
-    assert response.content == "Hello from Grok!"
+    assert response.content == "Hello from Groq!"
 ```
 
 ---
@@ -885,7 +885,7 @@ failures, calls `record_failure()` once more, and verifies the key becomes `DISA
 #### `tests/test_orchestrator.py`
 
 **What it tests:** The retry loop and failure classification. These tests are
-unit tests that inject mock `GrokClient` objects to simulate specific failure
+unit tests that inject mock `GroqClient` objects to simulate specific failure
 scenarios.
 
 `test_rate_limited_key_falls_back` — Programs the mock to raise `RateLimitError`
@@ -893,11 +893,11 @@ on the first call and return success on the second. Verifies that the response
 has `attempts=2` and that `record_rate_limit()` was called on the first key.
 
 `test_client_error_not_retried` — Programs the mock to always raise
-`GrokClientError`. Verifies that `complete()` was called exactly once (not
+`GroqClientError`. Verifies that `complete()` was called exactly once (not
 retried) and the exception propagates up.
 
 `test_all_retries_exhausted_raises` — Programs the mock to always raise
-`GrokTimeoutError`. Verifies that after `max_retries` attempts, an
+`GroqTimeoutError`. Verifies that after `max_retries` attempts, an
 `AllRetriesExhaustedError` is raised with the correct `attempts` count.
 
 ---
@@ -959,18 +959,18 @@ Step 5: app/services/key_manager.py — get_best_available_key()
 
 Step 6: Back in orchestrator.py
         ├── tried_key_ids = {2}
-        └── Calls grok_client.complete(api_key=key.api_key, key_id=2, request=...)
+        └── Calls Groq_client.complete(api_key=key.api_key, key_id=2, request=...)
 
-Step 7: app/services/grok_client.py — complete()
-        ├── Builds payload: {"model": "grok-3", "messages": [...], "temperature": 0.7}
+Step 7: app/services/Groq_client.py — complete()
+        ├── Builds payload: {"model": "Groq-3", "messages": [...], "temperature": 0.7}
         ├── POST https://api.x.ai/v1/chat/completions
         │   Authorization: Bearer xai-actual-key-value
         ├── Response received: HTTP 200, latency = 234ms
-        └── Returns GrokResponse(content="Hello!", latency_ms=234)
+        └── Returns GroqResponse(content="Hello!", latency_ms=234)
 
 Step 8: Back in orchestrator.py (SUCCESS PATH)
         ├── Calls key_manager.record_success(key, latency_ms=234)
-        └── Returns _build_response(grok_resp, key, attempts=1, total_latency=235ms)
+        └── Returns _build_response(Groq_resp, key, attempts=1, total_latency=235ms)
 
 Step 9: app/services/key_manager.py — record_success()
         ├── new_latency = 0.2 * 234 + 0.8 * old_avg (EWMA)
@@ -985,7 +985,7 @@ Step 10: Back in app/api/routes/ai.py — ask_ai()
          └── Returns HTTP 200 with JSON body:
              {
                "content": "Hello!",
-               "model": "grok-3",
+               "model": "Groq-3",
                "key_alias": "prod-key-1",   ← alias, never the real key
                "attempts": 1,
                "latency_ms": 235.4,
@@ -1008,8 +1008,8 @@ Follow these steps exactly, in order, to go from zero to a running server.
 
 ```bash
 # If you have the zip, extract it. Otherwise create the directory:
-mkdir grok_orchestrator
-cd grok_orchestrator
+mkdir Groq_orchestrator
+cd Groq_orchestrator
 ```
 
 ### Step 2 — Create a Python virtual environment
@@ -1056,12 +1056,12 @@ API_SECRET_KEY=replace-this-with-a-long-random-string-at-least-32-chars
 ADMIN_API_KEY=replace-this-with-another-long-random-string-at-least-32-chars
 
 # Leave DATABASE_URL as SQLite for now (development):
-DATABASE_URL=sqlite+aiosqlite:///./grok_orchestrator.db
+DATABASE_URL=sqlite+aiosqlite:///./Groq_orchestrator.db
 
-# These are the Grok API settings — leave as defaults unless you know better:
-GROK_BASE_URL=https://api.x.ai/v1
-GROK_DEFAULT_MODEL=grok-3
-GROK_REQUEST_TIMEOUT=30.0
+# These are the Groq API settings — leave as defaults unless you know better:
+Groq_BASE_URL=https://api.x.ai/v1
+Groq_DEFAULT_MODEL=Groq-3
+Groq_REQUEST_TIMEOUT=30.0
 
 # These control retry and cooldown behaviour:
 MAX_RETRIES=3
@@ -1101,7 +1101,7 @@ INFO     Uvicorn running on http://127.0.0.1:8000
 ```
 
 The `database_tables_ready` line tells you SQLite has been initialized and
-the `api_keys` table has been created at `./grok_orchestrator.db`.
+the `api_keys` table has been created at `./Groq_orchestrator.db`.
 
 ### Step 6 — Verify the server is running
 
@@ -1118,14 +1118,14 @@ This is automatically generated from your Pydantic schemas — no extra work nee
 
 ---
 
-## 7. How to Store and Manage Your Grok API Keys
+## 7. How to Store and Manage Your Groq API Keys
 
-Your actual Grok API key values are stored in the `api_keys` table in the
+Your actual Groq API key values are stored in the `api_keys` table in the
 database. You add them at runtime via the admin API — they are never hardcoded
 in any file and never in your `.env` file (the `.env` file only holds the
 application's own secret keys, not third-party API keys).
 
-### Getting your Grok API key
+### Getting your Groq API key
 
 Go to https://console.x.ai → API Keys → Create API Key. Copy the value —
 it will look like `xai-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`.
@@ -1137,7 +1137,7 @@ curl -X POST http://localhost:8000/admin/keys \
   -H "Content-Type: application/json" \
   -H "X-Admin-Key: your-admin-api-key-from-env-file" \
   -d '{
-    "api_key": "xai-your-actual-grok-key-here",
+    "api_key": "xai-your-actual-Groq-key-here",
     "alias": "primary-key",
     "priority": 50,
     "notes": "Main account key, created 2024-01"
@@ -1265,7 +1265,7 @@ curl -X POST http://localhost:8000/v1/ask-ai \
 # Response:
 # {
 #   "content": "The capital of France is Paris.",
-#   "model": "grok-3",
+#   "model": "Groq-3",
 #   "usage": {"prompt_tokens": 18, "completion_tokens": 9, "total_tokens": 27},
 #   "key_alias": "primary-key",
 #   "attempts": 1,
@@ -1326,7 +1326,7 @@ SCORE_WEIGHT_LAST_USED=0.1
 ### Scenario A: Key hits rate limit (HTTP 429)
 
 ```
-GrokClient raises RateLimitError
+GroqClient raises RateLimitError
   → Orchestrator catches it
   → key_manager.record_rate_limit(key):
       UPDATE api_keys SET status='rate_limited',
@@ -1342,7 +1342,7 @@ GrokClient raises RateLimitError
 ### Scenario B: Key credentials are invalid (HTTP 401)
 
 ```
-GrokClient raises AuthenticationError
+GroqClient raises AuthenticationError
   → Orchestrator catches it
   → key_manager.record_auth_failure(key):
       UPDATE api_keys SET status='disabled', is_enabled=FALSE
@@ -1352,17 +1352,17 @@ GrokClient raises AuthenticationError
   → Operator must investigate and either re-enable or delete the key via PATCH
 ```
 
-### Scenario C: Grok server is down (HTTP 503 from Grok)
+### Scenario C: Groq server is down (HTTP 503 from Groq)
 
 ```
-GrokClient raises GrokServerError
+GroqClient raises GroqServerError
   → Orchestrator catches it
   → key_manager.record_failure(key):
       UPDATE api_keys SET fail_count = fail_count + 1
       WHERE id = key_id
   → If fail_count < FAILURE_THRESHOLD: status stays 'active', try next key
   → If fail_count >= FAILURE_THRESHOLD: status becomes 'disabled'
-  → Since ALL keys talk to the same Grok server, all will fail
+  → Since ALL keys talk to the same Groq server, all will fail
   → AllRetriesExhaustedError raised after MAX_RETRIES attempts
   → Client receives HTTP 502 Bad Gateway
 ```
@@ -1384,7 +1384,7 @@ All keys are either rate_limited or disabled
 
 ```bash
 # Make sure you're in the project root with venv activated
-cd grok_orchestrator
+cd Groq_orchestrator
 source venv/bin/activate
 
 # Run all tests
@@ -1415,7 +1415,7 @@ tests/test_routes.py::TestAIRoute::test_successful_ai_request PASSED
 ========================= 30 passed in 2.14s =========================
 ```
 
-All tests use in-memory SQLite and mock HTTP clients — no Grok API key required,
+All tests use in-memory SQLite and mock HTTP clients — no Groq API key required,
 no internet connection needed.
 
 ---
@@ -1429,11 +1429,11 @@ no internet connection needed.
 pip install asyncpg
 
 # Update .env:
-DATABASE_URL=postgresql+asyncpg://username:password@your-db-host:5432/grok_orchestrator
+DATABASE_URL=postgresql+asyncpg://username:password@your-db-host:5432/Groq_orchestrator
 
 # Create the database in PostgreSQL first:
-createdb grok_orchestrator
-# OR in psql: CREATE DATABASE grok_orchestrator;
+createdb Groq_orchestrator
+# OR in psql: CREATE DATABASE Groq_orchestrator;
 ```
 
 ### Use Alembic for database migrations
@@ -1490,9 +1490,9 @@ disabled. The health check at `/health` remains available (used by load balancer
 | `DEBUG` | `false` | Enables coloured dev logging, Swagger UI, verbose SQL |
 | `LOG_LEVEL` | `INFO` | Minimum log level: DEBUG, INFO, WARNING, ERROR |
 | `DATABASE_URL` | SQLite | Full async connection string |
-| `GROK_BASE_URL` | `https://api.x.ai/v1` | Grok API base (change for a proxy) |
-| `GROK_DEFAULT_MODEL` | `grok-3` | Model used when client doesn't specify one |
-| `GROK_REQUEST_TIMEOUT` | `30.0` | Seconds before treating a call as timed out |
+| `Groq_BASE_URL` | `https://api.x.ai/v1` | Groq API base (change for a proxy) |
+| `Groq_DEFAULT_MODEL` | `Groq-3` | Model used when client doesn't specify one |
+| `Groq_REQUEST_TIMEOUT` | `30.0` | Seconds before treating a call as timed out |
 | `MAX_RETRIES` | `3` | How many different keys to try per request |
 | `COOLDOWN_SECONDS` | `60` | How long a rate-limited key waits before re-entry |
 | `FAILURE_THRESHOLD` | `5` | Consecutive failures before a key is auto-disabled |
