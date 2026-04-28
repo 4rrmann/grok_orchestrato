@@ -7,7 +7,7 @@
 
 ---
 
-## Table of Contents
+## Table of Contents:
 
 1. [What This System Actually Does (Plain English)](#1-what-this-system-actually-does)
 2. [Visual Architecture — How the Layers Connect](#2-visual-architecture)
